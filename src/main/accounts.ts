@@ -16,6 +16,9 @@ import {
 } from "./providers.ts";
 const newId =
   /^acc_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// Old catalogs could contain 104 user-created accounts. Built-in defaults are
+// added during migration, so they must not consume that existing capacity.
+const MAX_ADDITIONAL_ACCOUNTS = 104;
 const clean = (value: string, max: number) =>
   Array.from(
     value
@@ -79,7 +82,7 @@ function readCatalog(
     !data ||
     ![1, 2].includes(data.version as number) ||
     !Array.isArray(data.accounts) ||
-    data.accounts.length > 104
+    data.accounts.length > MAX_ADDITIONAL_ACCOUNTS + PROVIDER_ORDER.length
   )
     throw Error("invalid-catalog");
   const providers =
@@ -112,6 +115,11 @@ function readCatalog(
       ...(a.private === undefined ? {} : { private: a.private }),
     };
   });
+  if (
+    accounts.filter((account) => !isBuiltinProviderId(account.id)).length >
+    MAX_ADDITIONAL_ACCOUNTS
+  )
+    throw Error("invalid-catalog");
   // Add newly introduced built-ins to existing catalogs without changing the
   // IDs or partitions of accounts that were already saved.
   if (complete) {

@@ -10,7 +10,8 @@ export type BuiltinProviderId =
   | "instagram"
   | "discord"
   | "slack"
-  | "tinder";
+  | "tinder"
+  | "whatsapp";
 export type ProviderId = BuiltinProviderId | `web_${string}`;
 export const PROVIDER_ORDER = [
   "zalo",
@@ -21,6 +22,7 @@ export const PROVIDER_ORDER = [
   "discord",
   "slack",
   "tinder",
+  "whatsapp",
 ] as const;
 export type ProviderLogoSelection =
   | { kind: "builtin"; providerId: BuiltinProviderId }
@@ -65,7 +67,13 @@ export interface ProviderResult extends AccountResult {
   providerId?: ProviderId;
 }
 export type ProviderStatus =
-  "idle" | "loading" | "ready" | "needs-login" | "authenticated" | "error";
+  | "idle"
+  | "loading"
+  | "ready"
+  | "needs-login"
+  | "authenticated"
+  | "sleeping"
+  | "error";
 export const PROVIDERS = {
   zalo: {
     id: "zalo",
@@ -147,6 +155,14 @@ export const PROVIDERS = {
     color: "#ff6b6b",
     custom: false,
   },
+  whatsapp: {
+    id: "whatsapp",
+    label: "WhatsApp",
+    entry: "https://web.whatsapp.com/",
+    hosts: ["web.whatsapp.com"],
+    color: "#25D366",
+    custom: false,
+  },
 } as const;
 export interface ProfileSource {
   id: string;
@@ -194,6 +210,9 @@ export interface ReplyReminder {
   id: string;
   accountId: AccountId;
   note: string;
+  /** Main-process-only encrypted target; omitted from renderer snapshots. */
+  conversationUrl?: string;
+  hasConversationLink?: boolean;
   dueAt: number;
   createdAt: number;
   completedAt: number | null;
@@ -205,6 +224,10 @@ export interface ReminderSnapshot {
   unavailable: boolean;
   error: string;
 }
+export interface WorkspaceProfileSummary {
+  id: string;
+  name: string;
+}
 export interface AppState {
   /** Ephemeral interaction fence; never persisted in configuration. */
   headerRevision: number;
@@ -212,6 +235,10 @@ export interface AppState {
   resources?: ResourceState;
   shelf?: ShelfSummary;
   reminders?: ReminderSnapshot;
+  workspaceProfiles?: {
+    activeId: string | null;
+    items: WorkspaceProfileSummary[];
+  };
   floating?: {
     accountId: string | null;
     detached: boolean;
@@ -231,6 +258,7 @@ export interface AppState {
   providerTabs: ProviderTabs;
   presentation: Presentation;
   commandOpen: boolean;
+  actionFeedback?: string;
   accounts: Account[];
   accountBusy: boolean;
   catalogWarning: string;
@@ -291,6 +319,10 @@ export interface DesktopBridge {
       accountId?: AccountId;
       private?: boolean;
     },
+  ): Promise<AccountResult>;
+  workspaceProfile(
+    action: "save" | "switch" | "delete",
+    data: { id?: string | null; name?: string; lockVersion: number },
   ): Promise<AccountResult>;
   state(): Promise<AppState>;
   activate(id: AccountId): Promise<void>;
