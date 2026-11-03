@@ -20,13 +20,12 @@
 
 ## Windows x64
 
-- Workflow Windows release: chờ chạy trên tag `v0.8.5`.
-- Setup, gói `.nupkg`, `RELEASES` và checksum: chờ tạo, kiểm tra và tải lên draft.
+- Workflow Windows release không khởi động runner vì tài khoản GitHub bị khóa do billing. Không có asset Windows 0.8.5.
+- Windows tiếp tục dùng bộ cài 0.8.3 trên `mhfed/gom`.
 
 ## GitHub Release
 
 - Repository: `vidongls/gom`.
 - Tag: `v0.8.5`.
-- Draft: chờ tạo sau khi release commit được hợp nhất.
-- Windows workflow và checksum: chờ chạy trên runner Windows.
-- Phát hành công khai: chờ đủ asset Mac/Windows và checksum.
+- Release công khai cho macOS; DMG, ZIP và checksum đã tải lên và SHA-256 trên GitHub khớp với bản cục bộ.
+- Windows 0.8.5 chưa được phát hành; ghi chú release dẫn tới bộ cài 0.8.3.
