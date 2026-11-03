@@ -49,6 +49,10 @@ export interface ShelfRequest {
     | "surface"
     | "list"
     | "add-text"
+    | "add-template"
+    | "update-template"
+    | "remove-template"
+    | "copy-template"
     | "clipboard"
     | "pick-files"
     | "pin"
@@ -59,6 +63,9 @@ export interface ShelfRequest {
     | "preview";
   lockVersion: number;
   id?: string;
+  templateId?: string;
+  title?: string;
+  body?: string;
   text?: string;
   pinned?: boolean;
   open?: boolean;

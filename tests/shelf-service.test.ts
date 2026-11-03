@@ -14,7 +14,11 @@ import {
   ShelfService,
   type ShelfEnvironment,
 } from "../src/main/shelf-service.ts";
-import type { ShelfItem, ShelfResult } from "../src/shelf-types.ts";
+import type {
+  ShelfItem,
+  ShelfResult,
+  ShelfTemplate,
+} from "../src/shelf-types.ts";
 
 async function fileSymlink(source: string, link: string): Promise<boolean> {
   try {
@@ -39,10 +43,14 @@ function fixture() {
     live: true,
   };
   const records: Record<string, ShelfItem[]> = { normal: [], private: [] };
+  const templates: Record<string, ShelfTemplate[]> = {
+    normal: [],
+    private: [],
+  };
   const payloads = new Map<string, Buffer>();
   let sequence = 0;
   const snapshot = (space: string) => ({
-    templates: [],
+    templates: templates[space].map((x) => ({ ...x })),
     items: records[space].map((x) => ({ ...x })),
     totalBytes: records[space].reduce((n, x) => n + x.bytes, 0),
     revision: sequence,
@@ -65,6 +73,39 @@ function fixture() {
   };
   const store = {
     list: snapshot,
+    addTemplate: async (
+      space: string,
+      input: { title: string; body: string },
+      valid = () => true,
+    ) => {
+      if (!valid()) return { ok: false };
+      const now = ++sequence;
+      templates[space].push({
+        ...input,
+        id: String(now),
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { ok: true, snapshot: snapshot(space) };
+    },
+    updateTemplate: async (
+      space: string,
+      id: string,
+      input: { title: string; body: string },
+      valid = () => true,
+    ) => {
+      const template = templates[space].find((x) => x.id === id);
+      if (!valid() || !template) return { ok: false };
+      Object.assign(template, input, { updatedAt: ++sequence });
+      return { ok: true, snapshot: snapshot(space) };
+    },
+    removeTemplate: async (space: string, id: string, valid = () => true) => {
+      const index = templates[space].findIndex((x) => x.id === id);
+      if (!valid() || index < 0) return { ok: false };
+      templates[space].splice(index, 1);
+      sequence++;
+      return { ok: true, snapshot: snapshot(space) };
+    },
     addText: (space: string, text: string, valid?: () => boolean) =>
       add(
         space,
@@ -109,6 +150,9 @@ function fixture() {
     clearUnpinned: async () => ({ ok: false }),
   };
   const clipboard: { text?: string; data?: Buffer }[] = [];
+  const textWrites: string[] = [];
+  let clipboardReads = 0;
+  let changes = 0;
   let picked: string[] = [];
   let destination: string | undefined;
   let reader: ShelfEnvironment["readClipboard"] = async () => ({
@@ -119,7 +163,13 @@ function fixture() {
   let imageCalls = 0;
   const env: ShelfEnvironment = {
     current: () => context,
-    readClipboard: () => reader(),
+    readClipboard: () => {
+      clipboardReads++;
+      return reader();
+    },
+    writeText: async (text) => {
+      textWrites.push(text);
+    },
     writeClipboard: async (item, data) => {
       clipboard.push(item.text !== undefined ? { text: item.text } : { data });
     },
@@ -130,7 +180,9 @@ function fixture() {
       return Buffer.from("preview");
     },
     onSurface: () => {},
-    onChange: () => {},
+    onChange: () => {
+      changes++;
+    },
   };
   const service = new ShelfService(store, env);
   const request = (action: string, extra = {}) =>
@@ -140,7 +192,11 @@ function fixture() {
     request,
     store,
     records,
+    templates,
     clipboard,
+    textWrites,
+    clipboardReads: () => clipboardReads,
+    changes: () => changes,
     context,
     env,
     setReader: (r: typeof reader) => (reader = r),
@@ -174,6 +230,272 @@ test("shelf rejects stale and malformed requests without exposing namespace cont
   const r = await f.request("list");
   assert.deepEqual(r.snapshot?.items, []);
   assert.equal(f.service.summary().count, 0);
+});
+
+test("template CRUD lists both collections and mutates only the current namespace", async () => {
+  const f = fixture();
+  await f.store.addText("normal", "shelf item");
+  const added = await f.request("add-template", {
+    title: "Greeting",
+    body: "Hello\n\tthere",
+  });
+  assert.equal(added.ok, true);
+  const template = added.snapshot!.templates[0];
+  assert.equal(template.title, "Greeting");
+  assert.equal(template.body, "Hello\n\tthere");
+  assert.equal(added.snapshot!.items[0].text, "shelf item");
+  assert.equal(f.changes(), 1);
+  assert.deepEqual(f.textWrites, []);
+  assert.deepEqual(f.clipboard, []);
+  assert.equal(
+    (
+      await f.request("update-template", {
+        templateId: template.id,
+        title: "Edited",
+        body: "Updated body",
+      })
+    ).ok,
+    true,
+  );
+  const listed = await f.request("list");
+  assert.equal(listed.snapshot!.templates[0].title, "Edited");
+  assert.equal(listed.snapshot!.templates[0].body, "Updated body");
+  assert.equal(f.changes(), 2);
+  f.context.space = "private";
+  f.context.epoch++;
+  assert.deepEqual((await f.request("list")).snapshot!.templates, []);
+  assert.equal(
+    (
+      await f.request("add-template", {
+        title: "Private",
+        body: "Private body",
+      })
+    ).ok,
+    true,
+  );
+  f.context.space = "normal";
+  f.context.epoch++;
+  assert.equal(
+    (await f.request("remove-template", { templateId: template.id })).ok,
+    true,
+  );
+  assert.deepEqual((await f.request("list")).snapshot!.templates, []);
+  assert.equal(f.templates.private[0].body, "Private body");
+  assert.equal(f.changes(), 4);
+  assert.equal(f.clipboardReads(), 0);
+});
+
+test("template requests reject malformed fields, foreign keys, and item IDs", async () => {
+  const f = fixture();
+  await f.store.addTemplate("normal", {
+    title: "Existing",
+    body: "Stored body",
+  });
+  for (const request of [
+    { action: "add-template", title: 1, body: "body" },
+    { action: "add-template", title: "title" },
+    { action: "add-template", title: "title", body: null },
+    { action: "add-template", title: "title", body: "body", unknown: true },
+    { action: "add-template", title: "title", body: "body", id: "1" },
+    { action: "update-template", templateId: "1", title: "title" },
+    { action: "update-template", templateId: 1, title: "title", body: "body" },
+    { action: "remove-template" },
+    { action: "remove-template", templateId: "1", body: "override" },
+    { action: "copy-template", id: "1" },
+    { action: "copy-template", templateId: "1", text: "override" },
+    { action: "copy-template", templateId: "1", body: "override" },
+  ]) {
+    const result = await f.service.handle({ ...request, lockVersion: 1 });
+    assert.equal(result.ok, false, JSON.stringify(request));
+    assert.equal(result.snapshot, undefined);
+  }
+  assert.equal(f.templates.normal.length, 1);
+  assert.equal(f.templates.normal[0].body, "Stored body");
+  assert.equal(f.changes(), 0);
+  assert.deepEqual(f.textWrites, []);
+});
+
+test("template mutations carry an epoch guard through deferred store work", async () => {
+  for (const action of ["add-template", "update-template", "remove-template"]) {
+    const f = fixture();
+    await f.store.addTemplate("normal", {
+      title: "Original",
+      body: "Original body",
+    });
+    const before = structuredClone(f.templates);
+    let finish!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const add = f.store.addTemplate;
+    const update = f.store.updateTemplate;
+    const remove = f.store.removeTemplate;
+    f.store.addTemplate = async (...args) => {
+      await waiting;
+      return add(...args);
+    };
+    f.store.updateTemplate = async (...args) => {
+      await waiting;
+      return update(...args);
+    };
+    f.store.removeTemplate = async (...args) => {
+      await waiting;
+      return remove(...args);
+    };
+    const request = f.request(
+      action,
+      action === "remove-template"
+        ? { templateId: "1" }
+        : {
+            ...(action === "update-template" ? { templateId: "1" } : {}),
+            title: "Changed",
+            body: "Changed body",
+          },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    f.context.epoch += 2;
+    finish();
+    const result = await request;
+    assert.equal(result.ok, false);
+    assert.equal(result.snapshot, undefined);
+    assert.deepEqual(f.templates, before);
+    assert.equal(f.changes(), 0);
+  }
+});
+
+test("missing and cross-namespace template IDs cannot edit, remove, or copy", async () => {
+  const f = fixture();
+  await f.store.addTemplate("normal", {
+    title: "Normal",
+    body: "normal secret",
+  });
+  await f.store.addText("private", "item text");
+  f.context.space = "private";
+  f.context.epoch++;
+  for (const templateId of ["1", "2", "missing"]) {
+    for (const action of [
+      "update-template",
+      "remove-template",
+      "copy-template",
+    ]) {
+      const result = await f.request(action, {
+        templateId,
+        ...(action === "update-template"
+          ? { title: "Changed", body: "Changed" }
+          : {}),
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.snapshot, undefined);
+      assert.equal(JSON.stringify(result).includes("normal secret"), false);
+    }
+  }
+  assert.equal(f.templates.normal[0].body, "normal secret");
+  assert.equal(f.changes(), 0);
+  assert.deepEqual(f.textWrites, []);
+  assert.deepEqual(f.clipboard, []);
+  assert.equal(f.clipboardReads(), 0);
+});
+
+test("explicit template copy writes the exact stored body once without reading clipboard", async () => {
+  const f = fixture();
+  await f.request("add-template", {
+    title: "Title is not copied",
+    body: "  Hello\n\tthere  ",
+  });
+  await f.request("list");
+  assert.deepEqual(f.textWrites, []);
+  const result = await f.request("copy-template", { templateId: "1" });
+  assert.equal(result.ok, true);
+  assert.equal(result.snapshot, undefined);
+  assert.deepEqual(f.textWrites, ["  Hello\n\tthere  "]);
+  assert.deepEqual(f.clipboard, []);
+  assert.equal(f.clipboardReads(), 0);
+  assert.equal(f.changes(), 1);
+});
+
+test("queued template copy becomes stale after epoch changes without exposing prior-space data", async () => {
+  const f = fixture();
+  await f.store.addTemplate("private", {
+    title: "Private",
+    body: "prior-space secret",
+  });
+  f.context.space = "private";
+  let finish!: (value: null) => void;
+  f.setReader(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const reading = f.request("clipboard");
+  await new Promise((resolve) => setImmediate(resolve));
+  const copying = f.request("copy-template", { templateId: "1" });
+  f.context.space = "normal";
+  f.context.epoch++;
+  finish(null);
+  const result = await copying;
+  await reading;
+  assert.equal(result.ok, false);
+  assert.match(result.message!, /Không gian đã thay đổi/);
+  assert.equal(result.snapshot, undefined);
+  assert.equal(JSON.stringify(result).includes("prior-space secret"), false);
+  assert.deepEqual(f.textWrites, []);
+  assert.deepEqual(f.clipboard, []);
+  assert.equal(f.clipboardReads(), 1);
+});
+
+test("queued template copy reads the current stored body when its turn begins", async () => {
+  const f = fixture();
+  await f.store.addTemplate("normal", { title: "Reply", body: "old body" });
+  let finish!: (value: null) => void;
+  f.setReader(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const reading = f.request("clipboard");
+  await new Promise((resolve) => setImmediate(resolve));
+  const copying = f.request("copy-template", { templateId: "1" });
+  await f.store.updateTemplate("normal", "1", {
+    title: "Reply",
+    body: "new body",
+  });
+  finish(null);
+  await reading;
+  assert.equal((await copying).ok, true);
+  assert.deepEqual(f.textWrites, ["new body"]);
+});
+
+test("template copy finishing after a lock responds stale and keeps later copies queued", async () => {
+  const f = fixture();
+  await f.store.addTemplate("private", {
+    title: "Reply",
+    body: "explicit secret",
+  });
+  f.context.space = "private";
+  let finish!: () => void;
+  f.env.writeText = (text) => {
+    f.textWrites.push(text);
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  };
+  const first = f.request("copy-template", { templateId: "1" });
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = f.request("copy-template", { templateId: "1" });
+  assert.deepEqual(f.textWrites, ["explicit secret"]);
+  f.context.space = "normal";
+  f.context.epoch++;
+  finish();
+  for (const result of await Promise.all([first, second])) {
+    assert.equal(result.ok, false);
+    assert.match(result.message!, /Không gian đã thay đổi/);
+    assert.equal(result.snapshot, undefined);
+    assert.equal(JSON.stringify(result).includes("explicit secret"), false);
+  }
+  assert.deepEqual(f.textWrites, ["explicit secret"]);
+  assert.equal(f.clipboardReads(), 0);
 });
 
 test("clipboard read finishing after switch-away-and-back cannot add or copy content", async () => {
