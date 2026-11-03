@@ -119,6 +119,8 @@ try {
       window.calls.push(request);
       if (window.holdAction === request.action)
         return new Promise((resolve) => (window.finish = resolve));
+      if (window.delayAction === request.action)
+        await new Promise((resolve) => (window.resume = resolve));
       if (request.action === "surface") {
         window.state.shelf.open = request.open;
         window.emit();
@@ -402,6 +404,192 @@ try {
     await page.locator("#shelf-status").textContent(),
     "Đã sao chép mẫu từ dịch vụ.",
   );
+  // Catch focus loss when busy disables the initiating keyboard control,
+  // stale editors after deletion, and an unexplained template capacity limit.
+  const reviewFailures = [];
+  const reviewCheck = (name, actual, expected) => {
+    try {
+      assert.deepEqual(actual, expected, name);
+    } catch (error) {
+      reviewFailures.push(error);
+    }
+  };
+  const templateFocus = () =>
+    page.evaluate(() => ({
+      id: document.activeElement?.closest("[data-template-id]")?.dataset
+        .templateId,
+      action: document.activeElement?.dataset.templateAction,
+      create: document.activeElement?.id === "shelf-template-create",
+    }));
+  const paintWhileBusy = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+  const removeWithKeyboard = async (id) => {
+    await page.evaluate(() => (window.delayAction = "remove-template"));
+    await page
+      .locator(`[data-template-id=${id}] [data-template-action=remove]`)
+      .focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#shelf-panel").getAttribute("aria-busy") ===
+        "true",
+    );
+    await paintWhileBusy();
+    await page.evaluate(() => {
+      window.delayAction = "";
+      window.resume();
+    });
+    await page.waitForFunction(
+      (id) => !document.querySelector(`[data-template-id=${id}]`),
+      id,
+    );
+  };
+  await page.evaluate(() => (window.holdAction = "copy-template"));
+  await page
+    .locator("[data-template-id=hello] [data-template-action=copy]")
+    .focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#shelf-panel").getAttribute("aria-busy") ===
+      "true",
+  );
+  await paintWhileBusy();
+  await page.evaluate(() => {
+    window.holdAction = "";
+    window.finish({ ok: true, message: "Đã sao chép mẫu từ dịch vụ." });
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#shelf-panel").getAttribute("aria-busy") ===
+      "false",
+  );
+  reviewCheck(
+    "keyboard copy restores its initiating control",
+    await templateFocus(),
+    {
+      id: "hello",
+      action: "copy",
+      create: false,
+    },
+  );
+  await page.evaluate(() => {
+    window.reviewTemplates = window.templates;
+    window.templates = ["first", "middle", "last"].map((id, index) => ({
+      id,
+      title: `Mẫu ${id}`,
+      body: "Nội dung kiểm tra",
+      createdAt: 10 - index,
+      updatedAt: 10 - index,
+    }));
+    window.state.shelf.revision++;
+    window.emit();
+  });
+  await page.waitForFunction(
+    () => !!document.querySelector("[data-template-id=middle]"),
+  );
+  await removeWithKeyboard("middle");
+  reviewCheck(
+    "deleting a middle row focuses the next row action",
+    await templateFocus(),
+    {
+      id: "last",
+      action: "remove",
+      create: false,
+    },
+  );
+  await removeWithKeyboard("last");
+  reviewCheck(
+    "deleting the last row focuses the previous row action",
+    await templateFocus(),
+    {
+      id: "first",
+      action: "remove",
+      create: false,
+    },
+  );
+  await page
+    .locator("[data-template-id=first] [data-template-action=edit]")
+    .click();
+  await page.locator("#shelf-template-body").fill("Bản nháp của mẫu sắp xóa");
+  await removeWithKeyboard("first");
+  reviewCheck("deleting the final row focuses create", await templateFocus(), {
+    id: undefined,
+    action: undefined,
+    create: true,
+  });
+  reviewCheck(
+    "deleting the edited template closes and clears the editor",
+    {
+      visible: await page.locator("#shelf-template-editor").isVisible(),
+      title: await page.locator("#shelf-template-title").inputValue(),
+      body: await page.locator("#shelf-template-body").inputValue(),
+    },
+    { visible: false, title: "", body: "" },
+  );
+  await page.evaluate(() => {
+    window.templates = Array.from({ length: 100 }, (_, index) => ({
+      id: `template-quota-${index}`,
+      title: `Mẫu ${index}`,
+      body: "Nội dung",
+      createdAt: index,
+      updatedAt: index,
+    }));
+    window.state.shelf.revision++;
+    window.emit();
+  });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 100,
+  );
+  assert.equal(await page.locator("#shelf-template-create").isDisabled(), true);
+  reviewCheck(
+    "template capacity has a visible explanation and recovery action",
+    await page.evaluate(() => {
+      const note = document.querySelector("#shelf-template-quota");
+      return (
+        !!note &&
+        note.getBoundingClientRect().height > 0 &&
+        /100/.test(note.textContent) &&
+        /Xóa/.test(note.textContent)
+      );
+    }),
+    true,
+  );
+  await contentTab.click();
+  assert.equal(await page.locator("#shelf-template-quota").isVisible(), false);
+  await templateTab.click();
+  await page
+    .locator(
+      "[data-template-id=template-quota-99] [data-template-action=remove]",
+    )
+    .click();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 99,
+  );
+  assert.equal(
+    await page.locator("#shelf-template-create").isDisabled(),
+    false,
+  );
+  assert.equal(await page.locator("#shelf-template-quota").isVisible(), false);
+  await page.evaluate(() => {
+    window.templates = window.reviewTemplates;
+    window.state.shelf.revision++;
+    window.emit();
+  });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 2,
+  );
+  assert.equal(
+    await page.locator("#shelf-template-create").isDisabled(),
+    false,
+  );
+  if (reviewFailures.length)
+    throw new AggregateError(reviewFailures, "Final review regressions");
   await page.evaluate(() => (window.holdAction = "copy-template"));
   await page
     .locator("[data-template-id=hello] [data-template-action=copy]")
@@ -798,13 +986,23 @@ try {
   await page.evaluate(() => (window.holdAction = "copy-template"));
   await page
     .locator("[data-template-id=hello] [data-template-action=copy]")
-    .click();
+    .focus();
+  await page.keyboard.press("Enter");
   await page.evaluate(() => {
     window.state.privateSpace = { unlocked: false, lockVersion: 2 };
     window.state.shelf.open = false;
     window.emit();
+    document.querySelector("#shelf-toggle").focus();
     window.finish({ ok: true, message: "OLD_TEMPLATE_COPY" });
   });
+  assert.equal(await page.locator("#shelf-panel").isVisible(), false);
+  assert.equal(
+    await page
+      .locator("#shelf-toggle")
+      .evaluate((element) => element === document.activeElement),
+    true,
+    "a stale copy result must not restore focus into the locked, closed panel",
+  );
   assert.equal(
     await page.locator("#shelf-template-list").textContent(),
     "",

@@ -43,7 +43,7 @@ Mẫu được lưu trên máy qua lần mở lại app và tách riêng giữa 
 
 ## Không gian và dữ liệu
 
-Không gian thường và Không gian kín có khay riêng. Khi đổi không gian hoặc khóa, Gom đóng khay, xóa nội dung đang hiển thị và hủy các thao tác chưa hoàn tất thuộc không gian cũ. Di chuyển tài khoản giữa hai không gian không tự di chuyển các món trong khay.
+Không gian thường và Không gian kín có khay riêng. Khi đổi không gian hoặc khóa, Gom đóng khay, xóa nội dung đang hiển thị, bỏ phản hồi cũ và chặn yêu cầu sao chép thuộc không gian cũ trước khi chuyển cho hệ điều hành. Thao tác ghi clipboard đã bắt đầu ở hệ điều hành vẫn có thể hoàn tất sau khi khóa. Di chuyển tài khoản giữa hai không gian không tự di chuyển các món trong khay.
 
 Kho Khay được mã hóa trên máy bằng khóa do tài khoản hệ điều hành bảo vệ. Mật khẩu Không gian kín khóa quyền truy cập qua giao diện Gom. Nội dung bạn đã chủ động sao chép vào clipboard hoặc lưu ra ngoài vẫn ở ngoài Gom sau khi khóa.
 

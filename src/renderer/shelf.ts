@@ -254,13 +254,13 @@ export function createShelfUI(options: {
       "button",
     ))
       setProperty(button, "disabled", busy || !!unavailable);
+    const templatesFull =
+      (snapshot?.templates.length ?? 0) >= SHELF_LIMITS.templates;
+    setProperty($("shelf-template-quota"), "hidden", !templatesFull);
     setProperty(
       $<HTMLButtonElement>("shelf-template-create"),
       "disabled",
-      busy ||
-        loading ||
-        !!unavailable ||
-        (snapshot?.templates.length ?? 0) >= SHELF_LIMITS.templates,
+      busy || loading || !!unavailable || templatesFull,
     );
     setProperty(
       $<HTMLButtonElement>("shelf-template-save"),
@@ -318,6 +318,8 @@ export function createShelfUI(options: {
   ) {
     if (busy || !visible) return;
     const token = generation;
+    const captured = key(options.getState());
+    const focusedTemplate = captureTemplateFocus();
     busy = true;
     message("Đang thực hiện…");
     controls();
@@ -334,6 +336,12 @@ export function createShelfUI(options: {
       if (result.ok && request.action === "add-text") text.value = "";
       if (
         result.ok &&
+        request.action === "remove-template" &&
+        request.templateId === editingId
+      )
+        closeEditor();
+      if (
+        result.ok &&
         ["add-template", "update-template"].includes(request.action)
       )
         closeEditor(true);
@@ -347,6 +355,8 @@ export function createShelfUI(options: {
       }
     }
     controls();
+    if (visible && tab === "templates" && captured === key(options.getState()))
+      restoreTemplateFocus(focusedTemplate);
   }
   function card(item: ShelfItem) {
     const article = node("article", `shelf-card shelf-card-${item.kind}`);
@@ -531,6 +541,35 @@ export function createShelfUI(options: {
     article.append(actions);
     return article;
   }
+  function captureTemplateFocus() {
+    const focused = document.activeElement as HTMLElement | null;
+    const id =
+      focused?.closest<HTMLElement>("[data-template-id]")?.dataset.templateId;
+    const action = focused?.dataset.templateAction;
+    if (!id || !action) return;
+    return {
+      id,
+      action,
+      index: [...templateList.children].findIndex(
+        (child) => (child as HTMLElement).dataset.templateId === id,
+      ),
+    };
+  }
+  function restoreTemplateFocus(
+    focused: ReturnType<typeof captureTemplateFocus>,
+  ) {
+    if (!focused) return;
+    const rows = [
+      ...templateList.querySelectorAll<HTMLElement>("[data-template-id]"),
+    ];
+    const target =
+      rows.find((row) => row.dataset.templateId === focused.id) ||
+      rows[Math.max(0, Math.min(focused.index, rows.length - 1))];
+    const button = target?.querySelector<HTMLButtonElement>(
+      `[data-template-action="${focused.action}"]`,
+    );
+    (button || $("shelf-template-create")).focus({ preventScroll: true });
+  }
   function drawTemplates() {
     const query = search.value.toLocaleLowerCase("vi");
     const templates = (snapshot?.templates ?? [])
@@ -547,13 +586,7 @@ export function createShelfUI(options: {
       snapshot?.error,
     ]);
     if (signature !== templateSignature) {
-      const focused = document.activeElement as HTMLElement | null;
-      const focusedId =
-        focused?.closest<HTMLElement>("[data-template-id]")?.dataset.templateId;
-      const focusedAction = focused?.dataset.templateAction;
-      const previousIndex = [...templateList.children].findIndex(
-        (child) => (child as HTMLElement).dataset.templateId === focusedId,
-      );
+      const focused = captureTemplateFocus();
       templateSignature = signature;
       templateList.replaceChildren(...templates.map(templateCard));
       if (
@@ -572,22 +605,7 @@ export function createShelfUI(options: {
               : "Chưa có mẫu nào. Chọn Tạo mẫu để lưu câu trả lời thường dùng.",
           ),
         );
-      if (focusedId && focusedAction) {
-        const index = templates.findIndex(
-          (template) => template.id === focusedId,
-        );
-        const target =
-          templateList.children[
-            index < 0
-              ? Math.max(0, Math.min(previousIndex, templates.length - 1))
-              : index
-          ];
-        const button = target?.querySelector<HTMLButtonElement>(
-          `[data-template-action="${focusedAction}"]`,
-        );
-        if (button) button.focus({ preventScroll: true });
-        else $("shelf-template-create").focus({ preventScroll: true });
-      }
+      restoreTemplateFocus(focused);
     }
   }
   function draw() {
