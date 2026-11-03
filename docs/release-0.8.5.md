@@ -10,7 +10,7 @@ Mẫu không được chèn tự động vào ô soạn và Gom không tự gử
 
 ## Tải xuống
 
-- **macOS Apple Silicon:** tải [DMG](https://github.com/vidongls/gom/releases/download/v0.8.5/Gom-macOS-arm64-0.8.5.dmg), [ZIP](https://github.com/vidongls/gom/releases/download/v0.8.5/Gom-macOS-arm64-0.8.5.zip) và [SHA-256](https://github.com/vidongls/gom/releases/download/v0.8.5/SHA256SUMS-Gom-0.8.5-macos.txt).
+- **macOS Apple Silicon:** tải [DMG](https://github.com/vidongls/gom/releases/download/v0.8.5/Gom-macOS-arm64-0.8.5.dmg), [ZIP](https://github.com/vidongls/gom/releases/download/v0.8.5/Gom-macOS-arm64-0.8.5.zip) và [SHA-256 cho cả hai gói](https://github.com/vidongls/gom/releases/download/v0.8.5/SHA256SUMS-Gom-0.8.5-macos.txt).
 - **Windows x64:** tiếp tục dùng [bộ cài Gom 0.8.3](https://github.com/mhfed/gom/releases/download/v0.8.3/Gom-win32-x64-0.8.3-Setup.exe) từ bản phát hành trước. Tính năng Mẫu trả lời chưa có trong bản Windows này.
 
-Gom 0.8.3 và cũ hơn kiểm tra cập nhật từ `mhfed/gom`. Các bản phát hành mới trên `vidongls/gom` cần được cài thủ công khi có bộ cài phù hợp.
+Gom 0.8.3 và cũ hơn kiểm tra cập nhật từ `mhfed/gom`. Để chuyển từ 0.8.3 sang một bản trên `vidongls/gom` trong tương lai, hãy cài thủ công bộ cài phù hợp.
