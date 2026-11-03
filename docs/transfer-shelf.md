@@ -29,6 +29,18 @@ Bạn chọn người nhận, kiểm tra nội dung và bấm gửi trong nền 
 
 Xóa từng món bằng nút X. **Dọn mục chưa ghim** hiển thị số món trước khi bạn xác nhận và giữ nguyên các món đã ghim. Xóa trong khay không xóa tệp gốc hay bản sao bạn đã lưu ra ngoài.
 
+## Mẫu trả lời
+
+Trong **Khay**, chọn mục **Mẫu** để giữ những đoạn chữ có tên và dùng lại nhiều lần.
+
+- **Tạo mẫu:** bấm **Tạo mẫu**, nhập tên và nội dung rồi bấm **Lưu mẫu**. Bấm **Hủy** để bỏ thay đổi.
+- **Sửa:** bấm **Sửa** ở mẫu cần đổi, chỉnh tên hoặc nội dung rồi bấm **Lưu mẫu**.
+- **Xóa:** bấm nút X (**Xóa mẫu**) ở mẫu không còn cần dùng.
+- **Tìm:** nhập vào ô tìm kiếm của Khay để tìm theo tên hoặc nội dung mẫu.
+- **Dùng lại:** bấm **Sao chép** ở mẫu cần dùng, tự chọn cuộc trò chuyện và người nhận, dán, kiểm tra nội dung rồi bấm gửi trong nền tảng đang dùng.
+
+Mẫu được lưu trên máy qua lần mở lại app và tách riêng giữa Không gian thường và Không gian kín. Gom chỉ ghi nội dung mẫu vào clipboard khi bạn bấm **Sao chép**; không tự chèn mẫu vào ô soạn hay tự gửi tin nhắn.
+
 ## Không gian và dữ liệu
 
 Không gian thường và Không gian kín có khay riêng. Khi đổi không gian hoặc khóa, Gom đóng khay, xóa nội dung đang hiển thị và hủy các thao tác chưa hoàn tất thuộc không gian cũ. Di chuyển tài khoản giữa hai không gian không tự di chuyển các món trong khay.
