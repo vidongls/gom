@@ -3122,6 +3122,93 @@ dialog::backdrop {
   margin: 0 0 14px;
   flex: none;
 }
+.shelf-tabs {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.shelf-tabs button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.shelf-tabs [aria-selected="true"] {
+  color: var(--accent);
+  background: var(--selected);
+  box-shadow: inset 0 -2px var(--accent);
+  font-weight: 650;
+}
+.shelf-template-controls {
+  flex: none;
+  min-height: 0;
+  max-height: 48%;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+#shelf-template-create {
+  color: var(--accent);
+  background: var(--soft);
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.shelf-template-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  margin-top: 9px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.shelf-template-editor h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+.shelf-template-editor label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.shelf-template-editor input,
+.shelf-template-editor textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--cream);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.shelf-template-editor textarea {
+  resize: vertical;
+  min-height: 70px;
+  max-height: 160px;
+}
+.shelf-template-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.shelf-template-editor-actions button {
+  padding: 7px 10px;
+  font-size: 11px;
+}
+#shelf-template-save {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.shelf-template-title {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 7px;
+}
 .shelf-search {
   display: flex;
   align-items: center;
@@ -3260,9 +3347,10 @@ dialog::backdrop {
   margin-top: 6px;
   padding: 5px;
 }
-#shelf-list {
+#shelf-list,
+#shelf-template-list {
   flex: 1;
-  min-height: 60px;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
@@ -3270,7 +3358,8 @@ dialog::backdrop {
   margin: 12px -4px 0;
   padding: 0 4px 6px;
 }
-.shelf-card {
+.shelf-card,
+.shelf-template {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 11px;

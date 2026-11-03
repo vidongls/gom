@@ -1100,7 +1100,7 @@ function render(state: AppState) {
   } else {
     window.clearTimeout(actionFeedbackTimer);
     actionFeedbackTimer = undefined;
-    actionFeedback.hidden = true;
+    setProperty(actionFeedback, "hidden", true);
     actionFeedback.textContent = "";
   }
   privateSpaceUI.sync(state);

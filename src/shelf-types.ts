@@ -1,5 +1,7 @@
 export const SHELF_LIMITS = {
   items: 100,
+  templates: 100,
+  templateTitleChars: 120,
   totalBytes: 250 * 1024 * 1024,
   itemBytes: 50 * 1024 * 1024,
   textBytes: 64 * 1024,
@@ -20,7 +22,15 @@ export interface ShelfItem {
   mime: string;
   text?: string;
 }
+export interface ShelfTemplate {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+}
 export interface ShelfSnapshot {
+  templates: ShelfTemplate[];
   items: ShelfItem[];
   totalBytes: number;
   revision: number;
@@ -39,6 +49,10 @@ export interface ShelfRequest {
     | "surface"
     | "list"
     | "add-text"
+    | "add-template"
+    | "update-template"
+    | "remove-template"
+    | "copy-template"
     | "clipboard"
     | "pick-files"
     | "pin"
@@ -49,6 +63,9 @@ export interface ShelfRequest {
     | "preview";
   lockVersion: number;
   id?: string;
+  templateId?: string;
+  title?: string;
+  body?: string;
   text?: string;
   pinned?: boolean;
   open?: boolean;

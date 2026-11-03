@@ -311,6 +311,28 @@
         <p class="shelf-description">
           Gom lại, dùng ở bất kỳ cuộc trò chuyện nào.
         </p>
+        <div class="shelf-tabs" role="tablist" aria-label="Nội dung khay">
+          <button
+            id="shelf-tab-content"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="shelf-list"
+            tabindex="0"
+          >
+            Nội dung
+          </button>
+          <button
+            id="shelf-tab-templates"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="shelf-template-list"
+            tabindex="-1"
+          >
+            Mẫu
+          </button>
+        </div>
         <label class="shelf-search" for="shelf-search"
           ><svg aria-hidden="true"><use href="#i-search" /></svg
           ><input
@@ -319,7 +341,12 @@
             placeholder="Tìm trong khay"
             autocomplete="off"
         /></label>
-        <div class="shelf-filters" role="group" aria-label="Loại nội dung">
+        <div
+          id="shelf-item-filters"
+          class="shelf-filters"
+          role="group"
+          aria-label="Loại nội dung"
+        >
           <button type="button" data-shelf-filter="all" aria-pressed="true">
             Tất cả</button
           ><button type="button" data-shelf-filter="text" aria-pressed="false">
@@ -330,7 +357,7 @@
             Tệp
           </button>
         </div>
-        <div class="shelf-compose">
+        <div id="shelf-item-compose" class="shelf-compose">
           <label class="sr-only" for="shelf-text">Văn bản thêm vào khay</label>
           <textarea
             id="shelf-text"
@@ -346,6 +373,42 @@
           <button id="shelf-pick-files" class="shelf-pick-files" type="button">
             <svg aria-hidden="true"><use href="#i-plus" /></svg>Chọn tệp…
           </button>
+        </div>
+        <div
+          id="shelf-template-controls"
+          class="shelf-template-controls"
+          hidden
+        >
+          <button id="shelf-template-create" type="button">Tạo mẫu</button>
+          <p id="shelf-template-quota" class="shelf-note" hidden>
+            Đã đủ 100 mẫu. Xóa bớt mẫu để tạo mẫu mới.
+          </p>
+          <form
+            id="shelf-template-editor"
+            class="shelf-template-editor"
+            aria-labelledby="shelf-template-editor-heading"
+            hidden
+          >
+            <h3 id="shelf-template-editor-heading">Tạo mẫu</h3>
+            <label for="shelf-template-title">Tiêu đề</label>
+            <input
+              id="shelf-template-title"
+              type="text"
+              autocomplete="off"
+              required
+            />
+            <label for="shelf-template-body">Nội dung mẫu</label>
+            <textarea
+              id="shelf-template-body"
+              rows="4"
+              spellcheck="false"
+              required
+            ></textarea>
+            <div class="shelf-template-editor-actions">
+              <button id="shelf-template-cancel" type="button">Hủy</button>
+              <button id="shelf-template-save" type="submit">Lưu mẫu</button>
+            </div>
+          </form>
         </div>
         <p id="shelf-status" role="status" aria-live="polite" tabindex="-1"></p>
         <button id="shelf-retry" type="button" hidden>Thử đọc lại khay</button>
@@ -367,8 +430,20 @@
             </button>
           </div>
         </div>
-        <div id="shelf-list" aria-label="Nội dung trong khay"></div>
-        <div class="shelf-footer">
+        <div
+          id="shelf-list"
+          role="tabpanel"
+          aria-labelledby="shelf-tab-content"
+          tabindex="0"
+        ></div>
+        <div
+          id="shelf-template-list"
+          role="tabpanel"
+          aria-labelledby="shelf-tab-templates"
+          tabindex="0"
+          hidden
+        ></div>
+        <div id="shelf-item-footer" class="shelf-footer">
           <span id="shelf-capacity"></span
           ><button id="shelf-clear" type="button">Dọn mục chưa ghim</button>
         </div>

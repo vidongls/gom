@@ -6,9 +6,7 @@ on:
       tag:
         description: Existing draft release tag
         required: true
-        type: choice
-        options:
-          - v0.8.4
+        type: string
 
 permissions:
   contents: write
@@ -48,9 +46,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          if ($env:RELEASE_TAG -ne "v0.8.4") { throw "Only v0.8.4 is supported by this workflow." }
+          if ($env:RELEASE_TAG -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') { throw "Expected a semantic release tag such as v0.8.5." }
+          $releaseVersion = $Matches['version']
           $version = node -p "require('./package.json').version"
-          if ($version -ne "0.8.4") { throw "Expected package version 0.8.4; found $version." }
+          if ($version -ne $releaseVersion) { throw "Expected package version $releaseVersion; found $version." }
           $draft = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft
           if ($LASTEXITCODE -ne 0 -or $draft -ne "true") { throw "The target GitHub release must already exist as a draft." }
 
@@ -127,11 +126,15 @@ jobs:
 
       - name: Verify package assets and create checksums
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          if ($env:RELEASE_TAG -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') { throw "Expected a semantic release tag such as v0.8.5." }
+          $version = $Matches['version']
           $output = Join-Path $PWD "out-release/make/squirrel.windows/x64"
           $files = @(
-            (Join-Path $output "Gom-win32-x64-0.8.4-Setup.exe"),
-            (Join-Path $output "Gom_win32_x64-0.8.4-full.nupkg"),
+            (Join-Path $output "Gom-win32-x64-$version-Setup.exe"),
+            (Join-Path $output "Gom_win32_x64-$version-full.nupkg"),
             (Join-Path $output "RELEASES")
           )
           foreach ($file in $files) {
@@ -150,7 +153,7 @@ jobs:
             $bundleHash = (Get-FileHash "out-release/Gom-win32-x64/resources/app.asar" -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($payloadHash -ne $bundleHash) { throw "The update package ASAR differs from the verified bundle." }
           } finally { $archive.Dispose() }
-          $checksumFile = Join-Path $output "SHA256SUMS-Gom-0.8.4-windows.txt"
+          $checksumFile = Join-Path $output "SHA256SUMS-Gom-$version-windows.txt"
           $checksumLines = foreach ($file in $files) {
             $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $(Split-Path -Leaf $file)"
@@ -163,6 +166,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
+          if ($env:RELEASE_TAG -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') { throw "Expected a semantic release tag such as v0.8.5." }
+          $version = $Matches['version']
           $output = Join-Path $PWD "out-release/make/squirrel.windows/x64"
           $packagedCommit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw "Could not identify the packaged commit." }
@@ -171,9 +176,9 @@ jobs:
           $draft = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft
           if ($LASTEXITCODE -ne 0 -or $draft -ne "true") { throw "The target GitHub release must still be a draft before uploading assets." }
           gh release upload $env:RELEASE_TAG `
-            (Join-Path $output "Gom-win32-x64-0.8.4-Setup.exe") `
-            (Join-Path $output "Gom_win32_x64-0.8.4-full.nupkg") `
+            (Join-Path $output "Gom-win32-x64-$version-Setup.exe") `
+            (Join-Path $output "Gom_win32_x64-$version-full.nupkg") `
             (Join-Path $output "RELEASES") `
-            (Join-Path $output "SHA256SUMS-Gom-0.8.4-windows.txt") `
+            (Join-Path $output "SHA256SUMS-Gom-$version-windows.txt") `
             --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not upload Windows release assets." }

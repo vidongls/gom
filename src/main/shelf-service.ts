@@ -22,6 +22,7 @@ export interface ShelfEnvironment {
     { kind: "text"; text: string } | { kind: "image"; data: Buffer } | null
   >;
   writeClipboard(item: ShelfItem, data?: Buffer): Promise<void>;
+  writeText(text: string): Promise<void>;
   pickFiles(): Promise<string[] | undefined>;
   saveFile(name: string): Promise<string | undefined>;
   imagePreview(data: Buffer): Promise<Buffer | null>;
@@ -32,6 +33,9 @@ type Store = Pick<
   ShelfStore,
   | "list"
   | "addText"
+  | "addTemplate"
+  | "updateTemplate"
+  | "removeTemplate"
   | "addBinary"
   | "pin"
   | "remove"
@@ -50,6 +54,10 @@ const actions = new Set([
   "surface",
   "list",
   "add-text",
+  "add-template",
+  "update-template",
+  "remove-template",
+  "copy-template",
   "clipboard",
   "pick-files",
   "pin",
@@ -60,6 +68,15 @@ const actions = new Set([
   "preview",
 ]);
 const keys = new Set(["action", "lockVersion", "id", "text", "pinned", "open"]);
+const templateKeys = new Map<string, Set<string>>([
+  ["add-template", new Set(["action", "lockVersion", "title", "body"])],
+  [
+    "update-template",
+    new Set(["action", "lockVersion", "templateId", "title", "body"]),
+  ],
+  ["remove-template", new Set(["action", "lockVersion", "templateId"])],
+  ["copy-template", new Set(["action", "lockVersion", "templateId"])],
+]);
 
 // Read dimensions before asking the native image decoder to allocate pixels.
 // Other formats remain ordinary files; only PNG/JPEG receive image treatment.
@@ -282,8 +299,9 @@ export class ShelfService {
   async handle(raw: unknown): Promise<ShelfResult> {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return invalid();
     const r = raw as ShelfRequest;
+    const allowedKeys = templateKeys.get(r.action) ?? keys;
     if (
-      Object.keys(raw).some((k) => !keys.has(k)) ||
+      Object.keys(raw).some((k) => !allowedKeys.has(k)) ||
       !actions.has(r.action) ||
       !Number.isSafeInteger(r.lockVersion)
     )
@@ -312,6 +330,56 @@ export class ShelfService {
           ok: false,
           message: snapshot.error || "Chưa đọc được khay. Bạn thử mở lại Gom.",
         };
+      if (r.action === "add-template" || r.action === "update-template") {
+        if (typeof r.title !== "string" || typeof r.body !== "string")
+          return invalid();
+        const fields = { title: r.title, body: r.body };
+        if (r.action === "add-template")
+          return changed(
+            await this.store.addTemplate(context.space, fields, valid),
+          );
+        if (typeof r.templateId !== "string") return invalid();
+        return changed(
+          await this.store.updateTemplate(
+            context.space,
+            r.templateId,
+            fields,
+            valid,
+          ),
+        );
+      }
+      if (r.action === "remove-template") {
+        if (typeof r.templateId !== "string") return invalid();
+        return changed(
+          await this.store.removeTemplate(context.space, r.templateId, valid),
+        );
+      }
+      if (r.action === "copy-template") {
+        if (typeof r.templateId !== "string") return invalid();
+        return await this.binary(context, async () => {
+          if (!valid()) return stale();
+          // Resolve from the live namespace when the queued request runs.
+          const current = this.store.list(context.space);
+          if (current.unavailable)
+            return respond({
+              ok: false,
+              message:
+                current.error || "Chưa đọc được khay. Bạn thử mở lại Gom.",
+            });
+          const template = current.templates.find(
+            (entry) => entry.id === r.templateId,
+          );
+          if (!template)
+            return respond({
+              ok: false,
+              message: "Không tìm thấy mẫu trong không gian này.",
+            });
+          if (!valid()) return stale();
+          // Once handed to the OS, this explicit copy cannot be canceled.
+          await this.env.writeText(template.body);
+          return respond({ ok: true, message: "Đã sao chép." });
+        });
+      }
       if (r.action === "add-text") {
         if (typeof r.text !== "string") return invalid();
         return changed(await this.store.addText(context.space, r.text, valid));

@@ -286,11 +286,12 @@ export class ReminderStore {
     now = Date.now(),
     valid?: MutationGuard,
   ): Promise<ReplyReminder> {
+    const targetUrl = conversationUrl(input?.conversationUrl);
     const captured = {
       accountId: accountId(input?.accountId),
       note: note(input?.note),
       dueAt: future(input?.dueAt, now),
-      conversationUrl: conversationUrl(input?.conversationUrl),
+      ...(targetUrl ? { conversationUrl: targetUrl } : {}),
     };
     return this.enqueue(async () => {
       this.ready();

@@ -471,6 +471,7 @@ const shelfService = new ShelfService(shelfStore, {
       ]);
     }
   },
+  writeText: (text) => clipboard.writeText(text),
   pickFiles: async () => {
     const result = await dialog.showOpenDialog(win, {
       title: "Thêm tệp vào Khay",
