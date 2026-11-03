@@ -5,6 +5,7 @@ import {
   type ShelfRequest,
   type ShelfResult,
   type ShelfSnapshot,
+  type ShelfTemplate,
 } from "../shelf-types.ts";
 
 /** A workspace-scoped drawer; main owns both the data and its visible surface. */
@@ -35,6 +36,15 @@ export function createShelfUI(options: {
   const text = $<HTMLTextAreaElement>("shelf-text");
   const status = $("shelf-status");
   const confirmation = $("shelf-clear-confirm");
+  const contentTab = $<HTMLButtonElement>("shelf-tab-content");
+  const templatesTab = $<HTMLButtonElement>("shelf-tab-templates");
+  const templateList = $("shelf-template-list");
+  const editor = $<HTMLFormElement>("shelf-template-editor");
+  const templateTitle = $<HTMLInputElement>("shelf-template-title");
+  const templateBody = $<HTMLTextAreaElement>("shelf-template-body");
+  let tab: "content" | "templates" = "content";
+  let editingId: string | undefined;
+  let templateSignature = "";
   let epoch = "";
   let generation = 0;
   let snapshot: ShelfSnapshot | undefined;
@@ -85,6 +95,11 @@ export function createShelfUI(options: {
     busy = false;
     filter = "all";
     listSignature = "";
+    templateSignature = "";
+    tab = "content";
+    closeEditor();
+    templateList.replaceChildren();
+    tabControls();
     previews.clear();
     expanded.clear();
     list.replaceChildren();
@@ -136,6 +151,66 @@ export function createShelfUI(options: {
       draw();
     }
   }
+  function tabControls() {
+    const templates = tab === "templates";
+    for (const [button, selected] of [
+      [contentTab, !templates],
+      [templatesTab, templates],
+    ] as const) {
+      setAttribute(button, "aria-selected", String(selected));
+      setProperty(button, "tabIndex", selected ? 0 : -1);
+    }
+    for (const id of [
+      "shelf-item-filters",
+      "shelf-item-compose",
+      "shelf-item-footer",
+      "shelf-list",
+    ])
+      setProperty($(id), "hidden", templates);
+    setProperty($("shelf-template-controls"), "hidden", !templates);
+    setProperty(templateList, "hidden", !templates);
+    setProperty($("shelf-capacity"), "hidden", templates);
+    setProperty($("shelf-clear"), "hidden", templates);
+  }
+  function selectTab(next: typeof tab) {
+    if (tab === next) return;
+    tab = next;
+    closeEditor();
+    confirmation.hidden = true;
+    tabControls();
+    draw();
+  }
+  function closeEditor(restoreFocus = false) {
+    const id = editingId;
+    editingId = undefined;
+    setProperty(editor, "hidden", true);
+    templateTitle.value = "";
+    templateBody.value = "";
+    if (restoreFocus) {
+      const row = [...templateList.children].find(
+        (child) => (child as HTMLElement).dataset.templateId === id,
+      );
+      (
+        row?.querySelector<HTMLButtonElement>(
+          '[data-template-action="edit"]',
+        ) || $("shelf-template-create")
+      ).focus({ preventScroll: true });
+    }
+  }
+  function openEditor(template?: ShelfTemplate) {
+    editingId = template?.id;
+    templateTitle.value = template?.title || "";
+    templateBody.value = template?.body || "";
+    setProperty(
+      $("shelf-template-editor-heading"),
+      "textContent",
+      template ? "Sửa mẫu" : "Tạo mẫu",
+    );
+    setProperty(editor, "hidden", false);
+    message("");
+    controls();
+    templateTitle.focus();
+  }
   function controls() {
     const summary = options.getState()?.shelf;
     const unavailable = summary?.unavailable || snapshot?.unavailable;
@@ -174,7 +249,37 @@ export function createShelfUI(options: {
       "textContent",
       `${snapshot?.items.length ?? summary?.count ?? 0}/${SHELF_LIMITS.items} món · ${bytes(snapshot?.totalBytes ?? summary?.totalBytes ?? 0)} / ${bytes(SHELF_LIMITS.totalBytes)}`,
     );
-    setProperty($("shelf-quota"), "hidden", !full);
+    setProperty($("shelf-quota"), "hidden", tab === "templates" || !full);
+    for (const button of templateList.querySelectorAll<HTMLButtonElement>(
+      "button",
+    ))
+      setProperty(button, "disabled", busy || !!unavailable);
+    setProperty(
+      $<HTMLButtonElement>("shelf-template-create"),
+      "disabled",
+      busy ||
+        loading ||
+        !!unavailable ||
+        (snapshot?.templates.length ?? 0) >= SHELF_LIMITS.templates,
+    );
+    setProperty(
+      $<HTMLButtonElement>("shelf-template-save"),
+      "disabled",
+      busy ||
+        loading ||
+        !!unavailable ||
+        !templateTitle.value.trim() ||
+        !templateBody.value.trim(),
+    );
+    setProperty(
+      $<HTMLButtonElement>("shelf-template-cancel"),
+      "disabled",
+      busy,
+    );
+    setProperty(templateTitle, "disabled", busy);
+    setProperty(templateBody, "disabled", busy);
+    setProperty(contentTab, "disabled", busy);
+    setProperty(templatesTab, "disabled", busy);
   }
   async function load() {
     const summary = options.getState()?.shelf;
@@ -229,8 +334,13 @@ export function createShelfUI(options: {
       if (result.ok && request.action === "add-text") text.value = "";
       if (
         result.ok &&
+        ["add-template", "update-template"].includes(request.action)
+      )
+        closeEditor(true);
+      if (
+        result.ok &&
         !result.snapshot &&
-        !["copy", "export"].includes(request.action)
+        !["copy", "copy-template", "export"].includes(request.action)
       ) {
         attemptedRevision = -1;
         void load();
@@ -376,8 +486,125 @@ export function createShelfUI(options: {
     article.append(actions);
     return article;
   }
+  function templateCard(template: ShelfTemplate) {
+    const article = node("article", "shelf-template");
+    article.dataset.templateId = template.id;
+    article.append(
+      node("h3", "shelf-template-title", template.title),
+      node("p", "shelf-card-text", template.body),
+    );
+    const actions = node("div", "shelf-card-actions");
+    for (const [name, label, click] of [
+      [
+        "copy",
+        "Sao chép",
+        () =>
+          void perform(
+            { action: "copy-template", templateId: template.id },
+            "Đã sao chép mẫu.",
+          ),
+      ],
+      ["edit", "Sửa", () => openEditor(template)],
+      [
+        "remove",
+        "Xóa",
+        () =>
+          void perform(
+            { action: "remove-template", templateId: template.id },
+            "Đã xóa mẫu.",
+          ),
+      ],
+    ] as const) {
+      const button = node("button", "shelf-item-action", label);
+      button.type = "button";
+      button.dataset.templateAction = name;
+      button.setAttribute("aria-label", `${label} mẫu ${template.title}`);
+      button.onclick = click;
+      if (name === "remove") {
+        button.textContent = "";
+        button.title = "Xóa mẫu";
+        button.classList.add("shelf-icon-action");
+        button.append(symbol("close"));
+      }
+      actions.append(button);
+    }
+    article.append(actions);
+    return article;
+  }
+  function drawTemplates() {
+    const query = search.value.toLocaleLowerCase("vi");
+    const templates = (snapshot?.templates ?? [])
+      .filter((template) =>
+        `${template.title}\n${template.body}`
+          .toLocaleLowerCase("vi")
+          .includes(query),
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
+    const signature = JSON.stringify([
+      templates,
+      query,
+      snapshot?.unavailable,
+      snapshot?.error,
+    ]);
+    if (signature !== templateSignature) {
+      const focused = document.activeElement as HTMLElement | null;
+      const focusedId =
+        focused?.closest<HTMLElement>("[data-template-id]")?.dataset.templateId;
+      const focusedAction = focused?.dataset.templateAction;
+      const previousIndex = [...templateList.children].findIndex(
+        (child) => (child as HTMLElement).dataset.templateId === focusedId,
+      );
+      templateSignature = signature;
+      templateList.replaceChildren(...templates.map(templateCard));
+      if (
+        !templates.length &&
+        snapshot &&
+        !snapshot.unavailable &&
+        !snapshot.error &&
+        !options.getState()?.shelf?.unavailable
+      )
+        templateList.append(
+          node(
+            "p",
+            "shelf-empty",
+            query
+              ? "Chưa tìm thấy mẫu phù hợp. Bạn thử từ khóa khác."
+              : "Chưa có mẫu nào. Chọn Tạo mẫu để lưu câu trả lời thường dùng.",
+          ),
+        );
+      if (focusedId && focusedAction) {
+        const index = templates.findIndex(
+          (template) => template.id === focusedId,
+        );
+        const target =
+          templateList.children[
+            index < 0
+              ? Math.max(0, Math.min(previousIndex, templates.length - 1))
+              : index
+          ];
+        const button = target?.querySelector<HTMLButtonElement>(
+          `[data-template-action="${focusedAction}"]`,
+        );
+        if (button) button.focus({ preventScroll: true });
+        else $("shelf-template-create").focus({ preventScroll: true });
+      }
+    }
+  }
   function draw() {
     if (!visible) return;
+    setProperty(
+      $("shelf-retry"),
+      "hidden",
+      !snapshot?.unavailable &&
+        !snapshot?.error &&
+        !status.classList.contains("is-error"),
+    );
+
+    if (tab === "templates") {
+      drawTemplates();
+      controls();
+      return;
+    }
     const items = (snapshot?.items ?? [])
       .filter(
         (item) =>
@@ -442,13 +669,6 @@ export function createShelfUI(options: {
         if (!target) search.focus({ preventScroll: true });
       }
     }
-    setProperty(
-      $("shelf-retry"),
-      "hidden",
-      !snapshot?.unavailable &&
-        !snapshot?.error &&
-        !status.classList.contains("is-error"),
-    );
     controls();
   }
   function render(state: AppState) {
@@ -500,6 +720,54 @@ export function createShelfUI(options: {
     });
   $("shelf-close").onclick = () =>
     void send({ action: "surface", open: false });
+  contentTab.onclick = () => selectTab("content");
+  templatesTab.onclick = () => selectTab("templates");
+  for (const button of [contentTab, templatesTab])
+    button.onkeydown = (event) => {
+      if (
+        !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
+        busy
+      )
+        return;
+      event.preventDefault();
+      const next =
+        event.key === "Home"
+          ? contentTab
+          : event.key === "End"
+            ? templatesTab
+            : button === contentTab
+              ? templatesTab
+              : contentTab;
+      selectTab(next === contentTab ? "content" : "templates");
+      next.focus();
+    };
+  $("shelf-template-create").onclick = () => openEditor();
+  $("shelf-template-cancel").onclick = () => closeEditor(true);
+  templateTitle.oninput = controls;
+  templateBody.oninput = controls;
+  editor.onsubmit = (event) => {
+    event.preventDefault();
+    const title = templateTitle.value.trim();
+    const body = templateBody.value;
+    if (!title || !body.trim() || busy || editor.hidden) return;
+    if ([...title].length > SHELF_LIMITS.templateTitleChars) {
+      message(`Tiêu đề tối đa ${SHELF_LIMITS.templateTitleChars} ký tự.`, true);
+      return;
+    }
+    if (new TextEncoder().encode(body).byteLength > SHELF_LIMITS.textBytes) {
+      message(
+        `Nội dung mẫu tối đa ${bytes(SHELF_LIMITS.textBytes)}. Bạn chia thành đoạn ngắn hơn nhé.`,
+        true,
+      );
+      return;
+    }
+    void perform(
+      editingId
+        ? { action: "update-template", templateId: editingId, title, body }
+        : { action: "add-template", title, body },
+      editingId ? "Đã lưu mẫu." : "Đã tạo mẫu.",
+    );
+  };
   text.oninput = controls;
   $("shelf-add-text").onclick = () => {
     if (
@@ -562,7 +830,9 @@ export function createShelfUI(options: {
     )
       return;
     event.preventDefault();
-    if (!confirmation.hidden) {
+    if (!editor.hidden && !busy) {
+      closeEditor(true);
+    } else if (!confirmation.hidden) {
       confirmation.hidden = true;
       $("shelf-clear").focus();
     } else void send({ action: "surface", open: false });

@@ -676,6 +676,35 @@ try {
         (await viewFor("persist:zalo")).document,
         before.document,
       );
+      for (const name of ["Mẫu", "Nội dung"]) {
+        await page.getByRole("tab", { name, exact: true }).click();
+        const view = await viewFor("persist:zalo");
+        assert.equal(
+          view.id,
+          before.id,
+          `${name} preserves the native provider view`,
+        );
+        assert.deepEqual(
+          view.document,
+          before.document,
+          `${name} preserves document token and draft`,
+        );
+        assert.equal(view.document.draft, "SHELF_DRAFT_872");
+        assert.equal(
+          await client.evaluate(({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .find(
+                (w) =>
+                  globalThis.shelfFixture.sessions.get(w.session) ===
+                  "persist:zalo",
+              )
+              .executeJavaScript("typeof window.desktop"),
+          ),
+          "undefined",
+          `${name} exposes no shelf bridge to the provider`,
+        );
+      }
       await activate("telegram");
       assert.equal((await state()).shelf.open, true);
       await activate("zalo");

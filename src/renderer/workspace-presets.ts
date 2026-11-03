@@ -161,7 +161,8 @@ export function createWorkspacePresetUI(options: {
       state.accountBusy || state.importing || profileState.items.length >= 12,
     );
     const remove = $<HTMLButtonElement>("workspace-profile-delete");
-    remove.hidden = !profileState.activeId;
+    if (remove.hidden !== !profileState.activeId)
+      remove.hidden = !profileState.activeId;
     remove.disabled = state.accountBusy || state.importing;
   }
 

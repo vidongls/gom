@@ -80,6 +80,22 @@ try {
         mime: "text/plain",
       },
     ];
+    window.templates = [
+      {
+        id: "hello",
+        title: "Chào khách",
+        body: "Cảm ơn bạn\nDòng thứ hai <img src=x onerror=alert(1)>",
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        id: "hostile",
+        title: "<img onerror=alert(1)> Báo giá",
+        body: "GỬI BẢNG GIÁ hôm nay",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
     window.state = {
       privateSpace: { unlocked: false, lockVersion: 0 },
       shelf: {
@@ -92,6 +108,7 @@ try {
     };
     window.snapshot = () => ({
       items: structuredClone(window.items),
+      templates: structuredClone(window.templates),
       totalBytes: 3163,
       revision: window.state.shelf.revision,
       unavailable: false,
@@ -113,6 +130,25 @@ try {
           dataUrl:
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
         };
+      if (request.action === "copy-template")
+        return { ok: true, message: "Đã sao chép mẫu từ dịch vụ." };
+      if (request.action === "add-template")
+        window.templates.unshift({
+          id: "new-template",
+          title: request.title,
+          body: request.body,
+          createdAt: 3,
+          updatedAt: 3,
+        });
+      if (request.action === "update-template")
+        Object.assign(
+          window.templates.find((t) => t.id === request.templateId),
+          { title: request.title, body: request.body, updatedAt: 4 },
+        );
+      if (request.action === "remove-template")
+        window.templates = window.templates.filter(
+          (t) => t.id !== request.templateId,
+        );
       if (request.action === "pin")
         window.items.find((i) => i.id === request.id).pinned = request.pinned;
       if (request.action === "remove")
@@ -132,6 +168,9 @@ try {
         });
       if (
         [
+          "add-template",
+          "update-template",
+          "remove-template",
           "pin",
           "remove",
           "clear",
@@ -145,6 +184,9 @@ try {
       }
       if (
         [
+          "add-template",
+          "update-template",
+          "remove-template",
           "pin",
           "remove",
           "clear",
@@ -276,6 +318,271 @@ try {
   await page.waitForFunction(
     () => document.querySelectorAll(".shelf-card").length === 2,
   );
+  // Missing tab routing, unsafe text, wrong IPC payloads, and lost drafts are regressions.
+  const contentTab = page.getByRole("tab", {
+    name: "Nội dung",
+    exact: true,
+    includeHidden: true,
+  });
+  const templateTab = page.getByRole("tab", { name: "Mẫu", exact: true });
+  assert.equal(
+    await templateTab.count(),
+    1,
+    "Mẫu must be available as a shelf tab",
+  );
+  assert.equal(await contentTab.getAttribute("aria-selected"), "true");
+  const copiesBefore = await page.evaluate(
+    () => window.calls.filter((c) => c.action === "copy-template").length,
+  );
+  await templateTab.click();
+  assert.equal(await templateTab.getAttribute("aria-selected"), "true");
+  assert.equal(await contentTab.getAttribute("aria-selected"), "false");
+  assert.equal(await page.locator(".shelf-template").count(), 2);
+  assert.equal(
+    await idleMutationCount(),
+    0,
+    "loaded Mẫu polls must not mutate the DOM",
+  );
+  for (const selector of [
+    ".shelf-filters",
+    ".shelf-compose",
+    "#shelf-quota",
+    "#shelf-capacity",
+    "#shelf-clear",
+  ])
+    assert.equal(
+      await page.locator(selector).isVisible(),
+      false,
+      `${selector} is item-only`,
+    );
+  assert.equal(
+    await page.locator("#shelf-template-list img").count(),
+    0,
+    "template text remains inert",
+  );
+  assert.match(
+    await page.locator("#shelf-template-list").textContent(),
+    /<img onerror=alert\(1\)>/,
+  );
+  assert.match(
+    await page.locator("#shelf-template-list").textContent(),
+    /<img src=x onerror=alert\(1\)>/,
+  );
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter((c) => c.action === "copy-template").length,
+    ),
+    copiesBefore,
+    "opening templates never copies",
+  );
+  await page.locator("#shelf-search").fill("CHÀO KHÁCH");
+  assert.equal(await page.locator(".shelf-template").count(), 1);
+  await page.locator("#shelf-search").fill("gửi bảng giá");
+  assert.equal(
+    await page.locator("[data-template-id=hostile]").count(),
+    1,
+    "body search uses Vietnamese case folding",
+  );
+  await page.locator("#shelf-search").fill("không khớp");
+  assert.equal(await page.locator(".shelf-template").count(), 0);
+  assert.match(
+    await page.locator("#shelf-template-list").textContent(),
+    /Chưa tìm thấy/,
+  );
+  await page.locator("#shelf-search").fill("");
+  await page
+    .locator("[data-template-id=hello] [data-template-action=copy]")
+    .click();
+  assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), {
+    action: "copy-template",
+    templateId: "hello",
+    lockVersion: 0,
+  });
+  assert.equal(
+    await page.locator("#shelf-status").textContent(),
+    "Đã sao chép mẫu từ dịch vụ.",
+  );
+  await page.evaluate(() => (window.holdAction = "copy-template"));
+  await page
+    .locator("[data-template-id=hello] [data-template-action=copy]")
+    .click();
+  await page.evaluate(() => {
+    window.holdAction = "";
+    window.finish({ ok: false, message: "Không thể sao chép mẫu." });
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector("#shelf-status").textContent ===
+      "Không thể sao chép mẫu.",
+  );
+  assert.equal(
+    await page
+      .locator("#shelf-status")
+      .evaluate((e) => e.classList.contains("is-error")),
+    true,
+  );
+  await page.locator("#shelf-template-create").click();
+  assert.equal(
+    await page
+      .locator("#shelf-template-title")
+      .evaluate((e) => e === document.activeElement),
+    true,
+  );
+  assert.equal(await page.locator("#shelf-template-save").isDisabled(), true);
+  await page.locator("#shelf-template-title").fill("  Tiêu đề mới  ");
+  await page
+    .locator("#shelf-template-body")
+    .fill("Dòng một\nDòng hai\tgiữ nguyên  ");
+  await page.locator("#shelf-template-save").click();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 3,
+  );
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        (c) =>
+          c.action === "add-template" &&
+          c.title === "Tiêu đề mới" &&
+          c.body === "Dòng một\nDòng hai\tgiữ nguyên  " &&
+          c.lockVersion === 0,
+      ),
+    ),
+  );
+  assert.equal(await page.locator("#shelf-template-editor").isVisible(), false);
+  assert.equal(await page.locator("#shelf-template-body").inputValue(), "");
+  await page
+    .locator("[data-template-id=new-template] [data-template-action=edit]")
+    .click();
+  assert.equal(
+    await page.locator("#shelf-template-title").inputValue(),
+    "Tiêu đề mới",
+  );
+  assert.equal(
+    await page.locator("#shelf-template-body").inputValue(),
+    "Dòng một\nDòng hai\tgiữ nguyên  ",
+  );
+  await page.locator("#shelf-template-title").fill("Đã sửa");
+  await page.locator("#shelf-template-body").fill("Nội dung đã sửa");
+  await page.locator("#shelf-template-save").click();
+  await page.waitForFunction(() =>
+    document
+      .querySelector("[data-template-id=new-template]")
+      ?.textContent.includes("Đã sửa"),
+  );
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        (c) =>
+          c.action === "update-template" &&
+          c.templateId === "new-template" &&
+          c.title === "Đã sửa" &&
+          c.body === "Nội dung đã sửa",
+      ),
+    ),
+  );
+  assert.equal(
+    await page
+      .locator("[data-template-id=new-template] [data-template-action=edit]")
+      .evaluate((e) => e === document.activeElement),
+    true,
+    "saving restores edit focus",
+  );
+  await page
+    .locator("[data-template-id=new-template] [data-template-action=edit]")
+    .click();
+  await page.locator("#shelf-template-body").fill("Không được lưu");
+  const callsBeforeCancel = await page.evaluate(() => window.calls.length);
+  await page.locator("#shelf-template-cancel").click();
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    callsBeforeCancel,
+  );
+  assert.equal(await page.locator("#shelf-template-body").inputValue(), "");
+  await page
+    .locator("[data-template-id=new-template] [data-template-action=remove]")
+    .click();
+  await page.waitForFunction(
+    () => !document.querySelector("[data-template-id=new-template]"),
+  );
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        (c) =>
+          c.action === "remove-template" && c.templateId === "new-template",
+      ),
+    ),
+  );
+  await page.locator("#shelf-template-create").click();
+  await page.locator("#shelf-template-title").fill("Quá dài");
+  await page.locator("#shelf-template-body").fill("á".repeat(32769));
+  const beforeInvalid = await page.evaluate(() => window.calls.length);
+  await page.locator("#shelf-template-save").click();
+  assert.equal(
+    await page.evaluate(() => window.calls.length),
+    beforeInvalid,
+    "UTF-8 body limit is validated before sending",
+  );
+  assert.match(await page.locator("#shelf-status").textContent(), /64 KB/);
+  await page.locator("#shelf-template-cancel").click();
+  await page.locator("#shelf-template-create").click();
+  await page.locator("#shelf-template-title").fill("a".repeat(121));
+  await page.locator("#shelf-template-body").fill("Tiêu đề quá dài");
+  const beforeLongTitle = await page.evaluate(() => window.calls.length);
+  await page.locator("#shelf-template-save").click();
+  assert.equal(await page.evaluate(() => window.calls.length), beforeLongTitle);
+  assert.match(await page.locator("#shelf-status").textContent(), /120/);
+  await page.locator("#shelf-template-title").fill("🙂".repeat(120));
+  await page.locator("#shelf-template-body").fill("Đủ 120 ký tự Unicode");
+  await page.locator("#shelf-template-save").click();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 3,
+  );
+  assert.ok(
+    await page.evaluate(() =>
+      window.calls.some(
+        (c) => c.action === "add-template" && c.title === "🙂".repeat(120),
+      ),
+    ),
+  );
+  await page
+    .locator("[data-template-id=new-template] [data-template-action=remove]")
+    .click();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 2,
+  );
+  await page.evaluate(() => {
+    window.savedTemplates = window.templates;
+    window.templates = [];
+    window.state.shelf.revision++;
+    window.emit();
+  });
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#shelf-template-list")
+      .textContent.includes("Chưa có mẫu"),
+  );
+  await page.evaluate(() => {
+    window.templates = window.savedTemplates;
+    window.state.shelf.revision++;
+    window.emit();
+  });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".shelf-template").length === 2,
+  );
+  await page.locator("#shelf-close").click();
+  await page.locator("#shelf-toggle").click();
+  assert.equal(
+    await contentTab.getAttribute("aria-selected"),
+    "true",
+    "reopening restores Nội dung",
+  );
+  await templateTab.focus();
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(
+    await contentTab.evaluate((e) => e === document.activeElement),
+    true,
+  );
+  assert.equal(await contentTab.getAttribute("aria-selected"), "true");
   const out = "outputs/shelf-ui-check";
   await mkdir(out, { recursive: true });
   for (const width of [1280, 940, 400])
@@ -302,6 +609,24 @@ try {
           ),
       );
       await page.screenshot({ path: `${out}/${theme}-${width}.png` });
+      await templateTab.click();
+      await page.screenshot({ path: `${out}/templates-${theme}-${width}.png` });
+      await page.locator("#shelf-template-create").click();
+      await page.locator("#shelf-template-title").fill("Cảm ơn bạn");
+      await page
+        .locator("#shelf-template-body")
+        .fill("Chúng mình đã nhận được tin nhắn.\nGom sẽ phản hồi sớm nhé.");
+      assert.equal(
+        await page
+          .locator("#shelf-panel")
+          .evaluate((e) => e.scrollWidth > e.clientWidth),
+        false,
+      );
+      await page.screenshot({
+        path: `${out}/template-editor-${theme}-${width}.png`,
+      });
+      await page.locator("#shelf-template-cancel").click();
+      await contentTab.click();
     }
   const importReport = Array.from({ length: 10 }, (_, index) => {
     const name = `bao-gia-${String(index + 1).padStart(2, "0")}-${"a".repeat(145)}.pdf`;
@@ -362,7 +687,7 @@ try {
       layout.footer.bottom <= 640 &&
         layout.close.top >= 52 &&
         layout.close.bottom <= 640,
-      "footer and close remain in the viewport",
+      `footer and close remain in the viewport: ${JSON.stringify(layout)}`,
     );
   }
   for (const width of [400, 940]) {
@@ -465,6 +790,36 @@ try {
       .isDisabled(),
     false,
   );
+  await templateTab.click();
+  await page
+    .locator("[data-template-id=hello] [data-template-action=edit]")
+    .click();
+  await page.locator("#shelf-template-body").fill("PRIVATE_EDITOR_DRAFT");
+  await page.evaluate(() => (window.holdAction = "copy-template"));
+  await page
+    .locator("[data-template-id=hello] [data-template-action=copy]")
+    .click();
+  await page.evaluate(() => {
+    window.state.privateSpace = { unlocked: false, lockVersion: 2 };
+    window.state.shelf.open = false;
+    window.emit();
+    window.finish({ ok: true, message: "OLD_TEMPLATE_COPY" });
+  });
+  assert.equal(
+    await page.locator("#shelf-template-list").textContent(),
+    "",
+    "lock removes template text",
+  );
+  assert.equal(await page.locator("#shelf-template-title").inputValue(), "");
+  assert.equal(await page.locator("#shelf-template-body").inputValue(), "");
+  assert.equal(await page.locator("#shelf-template-editor").isVisible(), false);
+  assert.equal(await page.locator("#shelf-status").textContent(), "");
+  assert.equal(await contentTab.getAttribute("aria-selected"), "true");
+  await page.evaluate(() => {
+    window.holdAction = "";
+    window.state.shelf.open = true;
+    window.emit();
+  });
   await page.evaluate(() => window.ui.conceal());
   assert.equal(await page.locator("#shelf-panel").isVisible(), false);
   assert.equal(await page.locator("#shelf-list").textContent(), "");
@@ -472,7 +827,8 @@ try {
     await page.evaluate(() => window.calls.at(-1).action),
     "surface",
   );
-  assert.equal(await page.evaluate(() => window.calls.at(-1).lockVersion), 1);
+  assert.equal(await page.evaluate(() => window.calls.at(-1).lockVersion), 2);
+  assert.deepEqual(errors, [], "the shelf renderer must have no page errors");
   // Exercise the shell consumer too: its welcome cards exist even behind a native page.
   const shell = await browser.newPage({
     bypassCSP: true,
@@ -678,7 +1034,7 @@ try {
   await shell.close();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS shelf UI: open, stable polls/focus, inert text, search/filter, image preview, pin/delete/clear confirmation, multiline add, copy/export, epoch scrub, keyboard, 1280/940/400 light/dark, full-shell idle0 and live welcome updates, ten-file report keyboard scroll at400/940×640",
+    "PASS shelf UI: templates tabs/search/CRUD/copy/validation/focus/privacy, open, stable polls/focus, inert text, search/filter, image preview, pin/delete/clear confirmation, multiline add, copy/export, epoch scrub, keyboard, 1280/940/400 light/dark, full-shell idle0 and live welcome updates, ten-file report keyboard scroll at400/940×640",
   );
 } finally {
   await browser.close();
