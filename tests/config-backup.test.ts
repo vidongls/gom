@@ -48,7 +48,10 @@ test("portable backup omits private accounts, private-only sites and transient s
     "private",
   ])
     assert.equal(encoded.includes(secret), false, secret);
-  assert.equal(backup.accounts.length, 8);
+  assert.equal(
+    backup.accounts.length,
+    current.accounts.filter((account) => !account.private).length,
+  );
   assert.equal(backup.format, "gom-config");
   assert.deepEqual(parseConfigurationBackup(encoded), backup);
 });
@@ -242,7 +245,10 @@ test("portable ordinary subsets can be empty or wholly archived while installati
     private: true,
   });
   const backup = createConfigurationBackup(current, now);
-  assert.equal(backup.accounts.length, 8);
+  assert.equal(
+    backup.accounts.length,
+    current.accounts.filter((account) => !account.private).length,
+  );
   assert.ok(backup.accounts.every((a) => a.archived));
   assert.equal(JSON.stringify(backup).includes("PRIVATE_ACTIVE"), false);
   current.accounts = current.accounts.filter((a) => a.private);

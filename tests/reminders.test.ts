@@ -72,6 +72,7 @@ test("encrypted reminders survive restart with their account, note and selected 
     const store = new ReminderStore(path, codec);
     await store.load();
     const item = await store.add(input("  Chiều gửi báo giá  "), now);
+    assert.equal(Object.hasOwn(item, "conversationUrl"), false);
     assert.equal(item.note, "Chiều gửi báo giá");
     assert.equal(item.accountId, "zalo");
     assert.equal(item.dueAt, now + day);
