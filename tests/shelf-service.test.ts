@@ -42,6 +42,7 @@ function fixture() {
   const payloads = new Map<string, Buffer>();
   let sequence = 0;
   const snapshot = (space: string) => ({
+    templates: [],
     items: records[space].map((x) => ({ ...x })),
     totalBytes: records[space].reduce((n, x) => n + x.bytes, 0),
     revision: sequence,

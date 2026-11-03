@@ -706,3 +706,212 @@ test("index publication cannot succeed after cancellation wins the final event-l
     assert.equal(next.list("normal").items.length, 2);
   }
 });
+
+// These cases catch missing template state, validation, isolation and durable commits.
+test("template CRUD returns defensive snapshots ordered by last update", async (t) => {
+  const { root, store } = await fixture(t);
+  const first = await store.addTemplate("normal", {
+    title: "  Chào 👋  ",
+    body: "  Xin\r\nchào\tbạn\rViệt Nam  ",
+  });
+  assert.equal(first.ok, true);
+  const a = first.snapshot!.templates[0];
+  assert.equal(a.title, "Chào 👋");
+  assert.equal(a.body, "  Xin\nchào\tbạn\nViệt Nam  ");
+  assert.ok(a.createdAt > 0);
+  assert.equal(a.updatedAt, a.createdAt);
+  await store.addTemplate("normal", { title: "Second", body: "second body" });
+  const updated = await store.updateTemplate("normal", a.id, {
+    title: "Edited",
+    body: "edited 👋\r\n\t  body",
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.snapshot!.templates[0].id, a.id);
+  assert.equal(updated.snapshot!.templates[0].createdAt, a.createdAt);
+  assert.ok(updated.snapshot!.templates[0].updatedAt > a.updatedAt);
+  updated.snapshot!.templates[0].title = "caller mutation";
+  updated.snapshot!.templates.pop();
+  const next = new ShelfStore(root, codec);
+  await next.load();
+  assert.deepEqual(next.list("normal"), store.list("normal"));
+  assert.equal(next.list("normal").templates[0].title, "Edited");
+  assert.equal(next.list("normal").templates[0].body, "edited 👋\n\t  body");
+  const removed = await next.removeTemplate("normal", a.id);
+  assert.equal(removed.ok, true);
+  assert.equal(removed.snapshot!.templates.length, 1);
+  assert.equal((await next.removeTemplate("normal", a.id)).ok, false);
+});
+
+test("templates remain encrypted and namespace scoped without changing shelf items", async (t) => {
+  const { root, store } = await fixture(t);
+  await store.addText("normal", "shelf item");
+  assert.equal(
+    (
+      await store.addTemplate("normal", {
+        title: "secret title",
+        body: "secret template body",
+      })
+    ).ok,
+    true,
+  );
+  await store.addTemplate("private", {
+    title: "private title",
+    body: "private template body",
+  });
+  const id = store.list("normal").templates[0].id;
+  const before = store.list("private");
+  assert.equal(
+    (await store.updateTemplate("private", id, { title: "bad", body: "bad" }))
+      .ok,
+    false,
+  );
+  assert.equal((await store.removeTemplate("private", id)).ok, false);
+  assert.deepEqual(store.list("private"), before);
+  for (const path of await files(root)) {
+    const bytes = await readFile(path);
+    for (const secret of [
+      "secret title",
+      "secret template body",
+      "private title",
+      "private template body",
+    ])
+      assert.equal(bytes.includes(Buffer.from(secret)), false);
+  }
+  const next = new ShelfStore(root, codec);
+  await next.load();
+  assert.deepEqual(next.list("private"), before);
+  assert.equal(next.list("normal").items[0].text, "shelf item");
+  assert.equal(next.list("normal").templates[0].body, "secret template body");
+});
+
+test("template field validation rejects invalid creates and edits without losing prior data", async (t) => {
+  const { store } = await fixture(t);
+  assert.equal(
+    (
+      await store.addTemplate("normal", {
+        title: "😀".repeat(120),
+        body: "x".repeat(65536),
+      })
+    ).ok,
+    true,
+  );
+  const before = store.list("normal");
+  const id = before.templates[0].id;
+  for (const input of [
+    { title: " ", body: "ok" },
+    { title: "ok", body: " \n\t" },
+    { title: "😀".repeat(121), body: "ok" },
+    { title: "ok", body: "é".repeat(32769) },
+    { title: "bad\nname", body: "ok" },
+    { title: "bad\u202ename", body: "ok" },
+    { title: "ok", body: "bad\u0000body" },
+    { title: "ok", body: "bad\u2066body" },
+  ]) {
+    assert.equal((await store.addTemplate("normal", input)).ok, false);
+    assert.equal((await store.updateTemplate("normal", id, input)).ok, false);
+    assert.deepEqual(store.list("normal"), before);
+  }
+});
+
+test("a full namespace of maximum-size escaped templates survives restart and rejects overflow", async (t) => {
+  const { root, store } = await fixture(t);
+  for (let i = 0; i < 100; i++)
+    assert.equal(
+      (
+        await store.addTemplate("normal", {
+          title: "😀".repeat(120),
+          body: (i % 2 ? '"' : "\\").repeat(65536),
+        })
+      ).ok,
+      true,
+    );
+  const before = store.list("normal");
+  assert.equal(before.templates.length, 100);
+  assert.equal(
+    (await store.addTemplate("normal", { title: "overflow", body: "no" })).ok,
+    false,
+  );
+  assert.deepEqual(store.list("normal"), before);
+  assert.equal(
+    (await store.addTemplate("private", { title: "separate", body: "yes" })).ok,
+    true,
+  );
+  const next = new ShelfStore(root, codec);
+  await next.load();
+  assert.deepEqual(next.list("normal"), before);
+});
+
+test("queued template guards prevent create update and delete publication", async (t) => {
+  const { root, store } = await fixture(t);
+  await store.addTemplate("normal", { title: "keep", body: "keep body" });
+  const before = store.list("normal");
+  const id = before.templates[0].id;
+  let valid = true;
+  const pending = [
+    store.addTemplate("normal", { title: "no", body: "no" }, () => valid),
+    store.updateTemplate(
+      "normal",
+      id,
+      { title: "no", body: "no" },
+      () => valid,
+    ),
+    store.removeTemplate("normal", id, () => valid),
+  ];
+  valid = false;
+  for (const result of await Promise.all(pending))
+    assert.equal(result.ok, false);
+  assert.deepEqual(store.list("normal"), before);
+  const cancelled = await store.addTemplate(
+    "normal",
+    { title: "late", body: "late" },
+    () =>
+      !readdirSync(join(root, "normal")).some(
+        (name) => name.startsWith("index.enc.") && name.endsWith(".tmp"),
+      ),
+  );
+  assert.equal(cancelled.ok, false);
+  const next = new ShelfStore(root, codec);
+  await next.load();
+  assert.deepEqual(next.list("normal"), before);
+});
+
+async function writeShelfIndex(root: string, value: unknown) {
+  const key = Buffer.from(
+    await codec.decrypt((await readFile(join(root, "key.enc"))).toString()),
+    "base64",
+  );
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  cipher.setAAD(Buffer.from("gom-shelf:v1:normal:index"));
+  const encrypted = Buffer.concat([
+    cipher.update(Buffer.from(JSON.stringify(value))),
+    cipher.final(),
+  ]);
+  await writeFile(
+    join(root, "normal", "index.enc"),
+    Buffer.concat([Buffer.from("GS01"), nonce, cipher.getAuthTag(), encrypted]),
+  );
+}
+
+test("version one indexes retain item data and migrate on the next successful mutation", async (t) => {
+  const { root, store } = await fixture(t);
+  await store.addText("normal", "legacy content");
+  const { items, revision } = store.list("normal");
+  await writeShelfIndex(root, { version: 1, revision, items });
+  const legacyBytes = await readFile(join(root, "normal", "index.enc"));
+  const next = new ShelfStore(root, codec);
+  await next.load();
+  assert.deepEqual(next.list("normal").templates, []);
+  assert.deepEqual(next.list("normal").items, items);
+  assert.deepEqual(
+    await readFile(join(root, "normal", "index.enc")),
+    legacyBytes,
+  );
+  assert.equal(
+    (await next.addTemplate("normal", { title: "new", body: "new body" })).ok,
+    true,
+  );
+  const restarted = new ShelfStore(root, codec);
+  await restarted.load();
+  assert.deepEqual(restarted.list("normal"), next.list("normal"));
+});
