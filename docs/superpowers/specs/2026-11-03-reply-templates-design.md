@@ -1,6 +1,6 @@
 # Mẫu trả lời trong Khay
 
-Ngày: 2026-11-03. Trạng thái: **chờ người dùng duyệt thiết kế**.
+Ngày: 2026-11-03. Trạng thái: **đã được người dùng duyệt và đã triển khai**.
 
 ## Mục đích
 

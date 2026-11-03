@@ -195,11 +195,11 @@
 - Commit: `docs/superpowers/specs/2026-11-03-reply-templates-design.md`, `docs/superpowers/plans/2026-11-03-reply-templates.md`
 - Verify: implementation files from Tasks 1–3
 
-- [ ] **Step 1: Update the Khay guide**
+- [x] **Step 1: Update the Khay guide**
 
   Add instructions to create/edit/delete/search a template, copy it, and manually paste/review/send it. State that templates remain local, are separated between normal/private spaces, and are never inserted or sent automatically. Do not change release/version claims.
 
-- [ ] **Step 2: Run final verification commands**
+- [x] **Step 2: Run final verification commands**
 
   Run: `npm run typecheck`
 
@@ -211,11 +211,11 @@
 
   Expected: typecheck passes; store/service/renderer checks pass; the isolated Electron fixture preserves provider documents and drafts while Mẫu is open.
 
-- [ ] **Step 3: Review the diff against the approved design**
+- [x] **Step 3: Review the diff against the approved design**
 
   Confirm no provider DOM integration, automatic clipboard read, auto-fill/send, network sync, configuration-backup export, dependency change, or unrelated shelf behavior change was added.
 
-- [ ] **Step 4: Commit the guide and final documentation**
+- [x] **Step 4: Commit the guide and final documentation**
 
   ```bash
   git add docs/transfer-shelf.md docs/superpowers/specs/2026-11-03-reply-templates-design.md docs/superpowers/plans/2026-11-03-reply-templates.md
